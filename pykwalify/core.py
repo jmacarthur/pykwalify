@@ -477,6 +477,7 @@ class Core(object):
 
             regex_mappings = [(regex_rule, re.search(regex_rule.map_regex_rule, str(k))) for regex_rule in rule.regex_mappings]
             log.debug(u" + Mapping Regex matches: %s", regex_mappings)
+            matched_regex = False
 
             if any(regex_mappings):
                 sub_regex_result = []
@@ -493,18 +494,14 @@ class Core(object):
                 if rule.matching_rule == "any":
 
                     if any(sub_regex_result):
+                        matched_regex = True
                         log.debug(u" + Matched at least one regex")
                     else:
                         log.debug(u"No regex matched")
-                        self.errors.append(SchemaError.SchemaErrorEntry(
-                            msg=u"Key '{key}' does not match any regex '{regex}'. Path: '{path}'",
-                            path=path,
-                            value=value,
-                            key=k,
-                            regex="' or '".join(sorted([mm[0].map_regex_rule for mm in regex_mappings]))))
                 elif rule.matching_rule == "all":
                     if all(sub_regex_result):
                         log.debug(u" + Matched all regex rules")
+                        matched_regex = True
                     else:
                         log.debug(u"Did not match all regex rules")
                         self.errors.append(SchemaError.SchemaErrorEntry(
@@ -515,20 +512,36 @@ class Core(object):
                             regex="' and '".join(sorted([mm[0].map_regex_rule for mm in regex_mappings]))))
                 else:
                     log.debug(u" + No mapping rule defined")
-            elif r is None:
-                if not rule.allowempty_map:
-                    self.errors.append(SchemaError.SchemaErrorEntry(
-                        msg=u"Key '{key}' was not defined. Path: '{path}'",
-                        path=path,
-                        value=value,
-                        key=k))
-            else:
-                if not r.schema:
-                    # validate recursively
-                    log.debug(u" + Core Map: validate recursively: %s", r)
-                    self._validate(v, r, u"{}/{}".format(path, k), done)
+
+            if not matched_regex:
+                if r is None:
+                    if not rule.allowempty_map:
+                        self.errors.append(SchemaError.SchemaErrorEntry(
+                            msg=u"Key '{key}' was not defined. Path: '{path}'",
+                            path=path,
+                            value=value,
+                            key=k))
+                    return
                 else:
-                    print(u" + Something is ignored Oo : {}".format(r))
+                    log.debug(u" + Core Map: There are no regexes!")
+                    if not r.schema:
+                    # validate recursively
+                        log.debug(u" + Core Map: validate recursively: %s", r)
+                        self._validate(v, r, u"{}/{}".format(path, k), done)
+                        return
+                    else:
+                        print(u" + Something is ignored Oo : {}".format(r))
+                        return
+                # Fall through case - did not match anything
+                self.errors.append(SchemaError.SchemaErrorEntry(
+                    msg=u"Key '{key}' does not match any regexes '{regex}' or other keys. Path: '{path}'",
+                    path=path,
+                    value=value,
+                    key=k,
+                    regex="' or '".join(sorted([mm[0].map_regex_rule for mm in regex_mappings]))))
+            
+                    
+        log.debug(u" --- <<< exiting _validate_mapping ---")
 
     def _validate_scalar(self, value, rule, path, done=None):
         log.debug(u"Validate scalar")
